@@ -37,7 +37,24 @@ Profiling performed via `notebooks/01_bronze_data_profiling.ipynb` after landing
 **Decision:**
 1. Deduplicate on `review_id`, keeping the most recent row by `review_answer_timestamp`.
 2. Inner-join reviews to orders (not left join) to drop orphaned reviews rather than carry forward nulls or unjoinable records.
-3. **Documented data loss:** ~4,938 rows (~4.7% of raw reviews) are intentionally dropped. This is a deliberate, documented architectural decision — not an oversight — made because reviews with no valid parent order cannot be attributed to any business entity (customer, product, order value) and would corrupt any order-level aggregation if kept.
+3. **Documented data loss:** intentional, not an oversight — reviews with no valid parent order cannot be attributed to any business entity (customer, product, order value) and would corrupt any order-level aggregation if kept.
+
+**Implemented and verified (`notebooks/02_silver_orders_reviews.ipynb`):**
+
+| Stage | Row count | Change |
+|---|---|---|
+| Raw reviews (Bronze) | 104,162 | — |
+| After dedup (keep latest by `review_answer_timestamp`) | 102,958 | −1,204 exact duplicates removed |
+| After dropping orphaned reviews (inner join to orders) | 98,410 | −4,548 orphaned rows removed |
+| **Final `silver_reviews`** | **98,410** | **−5,752 total (5.5% of raw reviews)** |
+
+Note: the orphan-removal count here (4,548) is lower than the 4,938 orphaned rows found in the raw Bronze profiling, because some duplicate rows removed during dedup were also orphaned — the two issues overlap rather than stack additively.
+
+**Post-write verification performed:**
+- Row counts in the written Delta tables (`silver_orders`, `silver_reviews`) matched the counts reported during the transform (99,441 / 98,410) — confirms no silent write corruption.
+- `DESCRIBE silver_orders` confirmed all 5 date columns persisted as `timestamp` type in the actual stored table, not just the in-memory dataframe.
+- `GROUP BY review_id HAVING COUNT(*) > 1` against `silver_reviews` returned zero rows — confirms no duplicate review_ids survived.
+- `LEFT ANTI JOIN` of `silver_reviews` against `silver_orders` on `order_id` returned zero rows — confirms no orphaned reviews survived.
 
 ## Finding 3: Geolocation duplication is by design, not a defect
 

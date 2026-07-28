@@ -27,7 +27,7 @@ Most portfolio data projects show a finished, clean pipeline. This one intention
 - [x] Fabric workspace + Lakehouse provisioned
 - [x] Bronze: all 9 Olist CSVs landed and profiled
 - [x] Bronze data quality profiling complete (see `docs/data-quality-findings.md`)
-- [ ] Silver: orders + reviews transformation (in progress)
+- [x] Silver: orders + reviews transformation — typed, deduplicated, referentially clean (verified; see `docs/data-quality-findings.md`)
 - [ ] Silver: remaining 7 tables
 - [ ] Gold layer + Power BI reporting
 - [ ] API ingestion (Open-Meteo)
