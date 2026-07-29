@@ -4,17 +4,17 @@ Profiling performed via `notebooks/01_bronze_data_profiling.ipynb` after landing
 
 ## Summary
 
-| Dataset | Row count | Notes |
-|---|---|---|
-| orders | 99,441 | Matches known dataset size; baseline confirmed |
-| customers | 99,441 | Clean |
-| geolocation | 1,000,163 | Heavy duplication by design (see below) |
-| order_items | 112,650 | Clean |
-| order_payments | 103,886 | Clean |
-| **order_reviews** | **104,162** | **Duplicates + orphaned foreign keys — see below** |
-| products | 32,951 | Clean (note: `product_name_lenght` is misspelled in the *source* data, not a transcription error) |
-| sellers | 3,095 | Clean |
-| product_category_name_translation | 71 | Clean |
+| Dataset | Raw row count | Silver row count | Notes |
+|---|---|---|---|
+| orders | 99,441 | 99,441 | Matches known dataset size; baseline confirmed |
+| customers | 99,441 | 99,441 | Clean |
+| geolocation | 1,000,163 | 27,912 | Aggregated to zip-code centroids by design — see Finding 3 |
+| order_items | 112,650 | 112,650 | Clean, zero orphaned FKs — see Finding 5 |
+| order_payments | 103,886 | 103,886 | Clean, zero orphaned FKs — see Finding 5 |
+| **order_reviews** | **104,162** | **98,410** | **Duplicates + orphaned foreign keys — see Finding 2** |
+| **products** | 32,951 | 32,951 | **610 rows missing category + photo count — see Finding 4** (note: `product_name_lenght` is misspelled in the *source* data, not a transcription error) |
+| sellers | 3,095 | 3,095 | Clean |
+| product_category_name_translation | 71 | 71 | Clean |
 
 ## Finding 1: All date/timestamp columns loaded as strings
 
@@ -60,4 +60,32 @@ Note: the orphan-removal count here (4,548) is lower than the 4,938 orphaned row
 
 **Observation:** ~1,000,163 rows exist for only ~19,000 unique Brazilian zip codes — heavy duplication.
 
-**Decision:** This is *not* treated as a data quality issue. The dataset intentionally contains multiple lat/long pings per zip code. Downstream, this will be aggregated to zip-code centroids (e.g. average lat/long per zip) rather than deduplicated as an error.
+**Decision:** This is *not* treated as a data quality issue. The dataset intentionally contains multiple lat/long pings per zip code.
+
+**Implemented (`notebooks/03_silver_remaining_tables.ipynb`):** Aggregated to one row per (`zip_code_prefix`, `city`, `state`), taking the average lat/long as a centroid. Result: 1,000,163 raw rows → **27,912 zip-code centroid rows**.
+
+## Finding 4: Products — 610 rows missing category, correlated with missing photo count
+
+**Issue:** 610 of 32,951 products (~1.9%) have a null `product_category_name`, meaning they cannot be joined to `silver_category_translation` for an English category label.
+
+**Deeper analysis:** Rather than treat this as an isolated null, checked whether it correlated with other missing fields on the same rows:
+- **610 / 610** of these products are *also* missing `product_photos_qty`
+- Only **1 / 610** is missing `product_weight_g`
+
+**Conclusion:** This is not two unrelated data quality issues — it's one shared pattern. These 610 products appear to have had an entire metadata block (category + photo count) fail to populate together during ingestion, while physical dimensions (weight, size) were captured through an apparently different, largely unaffected path.
+
+**Decision:** Kept these rows in `silver_products` rather than dropping them (unlike orphaned reviews) — a missing category is a reporting/enrichment gap, not a referential integrity violation, and the products are still valid, sellable entities. Any category-based reporting (e.g. "revenue by category") must explicitly handle this null bucket (~1.9% of the catalog) rather than silently excluding it.
+
+## Finding 5: Order items and payments — referential integrity confirmed clean
+
+Unlike reviews, both `order_items` and `payments` were checked against their foreign keys and showed **zero orphaned references**:
+- `order_items`: 0 orphaned `order_id`, `product_id`, and `seller_id` references (112,650 rows, fully clean)
+- `payments`: 0 orphaned `order_id` references (103,886 rows, fully clean)
+
+This is worth stating explicitly — not every table in this dataset was assumed broken. Each was checked individually, and referential integrity issues were found and fixed only where they actually existed (reviews), rather than applied uniformly across all tables.
+
+## Design pattern: reusable Silver cleaning function
+
+`03_silver_remaining_tables.ipynb` introduces a single parameterized function (`clean_and_write_table`) that handles load, type casting, foreign-key validation, and Delta write for any row-level table, driven by a config of column names and FK checks passed per call. This replaces what would otherwise be 5 near-identical, copy-pasted transformation blocks (customers, sellers, category translation, products, order_items, payments) with one reusable, testable unit — a metadata-driven pattern that would scale to additional tables without linear code growth.
+
+Geolocation was deliberately **excluded** from this function, since it requires aggregation semantics (grouping to zip-code centroids) rather than row-level casting/validation — forcing it into the same function would have blurred its contract rather than simplified it.

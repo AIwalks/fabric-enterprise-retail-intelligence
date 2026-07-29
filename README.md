@@ -28,7 +28,7 @@ Most portfolio data projects show a finished, clean pipeline. This one intention
 - [x] Bronze: all 9 Olist CSVs landed and profiled
 - [x] Bronze data quality profiling complete (see `docs/data-quality-findings.md`)
 - [x] Silver: orders + reviews transformation — typed, deduplicated, referentially clean (verified; see `docs/data-quality-findings.md`)
-- [ ] Silver: remaining 7 tables
+- [x] Silver: remaining 7 tables (customers, sellers, category translation, products, order_items, payments, geolocation) — built via a reusable, metadata-driven cleaning function; verified (see `docs/data-quality-findings.md`)
 - [ ] Gold layer + Power BI reporting
 - [ ] API ingestion (Open-Meteo)
 - [ ] Database ingestion (Azure SQL)
